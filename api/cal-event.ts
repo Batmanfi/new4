@@ -12,6 +12,14 @@ const CAL_USERNAME   = "theinfostudio"
 const CAL_EVENT_SLUG = "test"
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // CORS — allow your Framer site to call this endpoint
+  res.setHeader("Access-Control-Allow-Origin", "https://yoursite.framer.website") // ← replace with your Framer domain
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+
+  // Preflight
+  if (req.method === "OPTIONS") return res.status(200).end()
+
   // Only allow GET
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" })
