@@ -11,13 +11,25 @@ const MUTED        = "#666655"
 const INPUT_BG     = "#F4F4EE"
 
 // ─── CAL.COM EMBED ────────────────────────────────────────────────────────────
-// API key is now server-side only — see /api/cal-event.ts + Vercel env vars
+// API key lives on the server — see /api/cal-event.ts
 const CAL_USERNAME   = "theinfostudio"
 const CAL_EVENT_SLUG = "test"
 const CAL_EMBED_URL  = `https://cal.com/${CAL_USERNAME}/${CAL_EVENT_SLUG}`
 
+// ─── Replace with your actual Vercel project URL ──────────────────────────────
+const PROXY_URL = "https://new4-qnt30ey06-batmanfis-projects.vercel.app/api/cal-event"
+
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type StepType = "textarea" | "text" | "select" | "contact" | "calendar"
+
+interface CalField {
+  name: string        // slug / internal key, used to pass back to Cal
+  label: string       // human-readable question label
+  type: string
+  required: boolean
+  placeholder?: string
+  options?: string[]
+}
 
 interface Step {
   id: string
@@ -29,19 +41,6 @@ interface Step {
   required: boolean
 }
 
-interface EventDetails {
-  title: string
-  description: string
-  length: number
-  customFields: Array<{
-    name: string
-    type: string
-    required: boolean
-    placeholder?: string
-    options?: string[]
-  }>
-}
-
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function TheInfoStudioCalBooking() {
   const [stepIndex, setStepIndex] = useState(0)
@@ -51,41 +50,23 @@ export default function TheInfoStudioCalBooking() {
   const [loading, setLoading]     = useState(true)
   const listenerRef               = useRef<((e: MessageEvent) => void) | null>(null)
 
-  // ── Fetch via Vercel proxy — no API key exposed in the browser ─────────────
+  // ── Fetch from Vercel proxy ────────────────────────────────────────────────
   useEffect(() => {
     const fetchEvent = async () => {
       try {
-        const res = await fetch("/api/cal-event")
-        if (!res.ok) throw new Error(`Proxy error ${res.status}`)
+        const res = await fetch(PROXY_URL)
+        if (!res.ok) throw new Error(`Proxy ${res.status}`)
         const json = await res.json()
 
-        const et =
-          json?.data?.eventType ??
-          (Array.isArray(json?.data) ? json.data[0] : null)
+        // Our proxy returns: { status: "success", data: { title, description, length, customFields[] } }
+        const data = json?.data
+        if (!data) throw new Error("No data in proxy response")
 
-        if (!et) throw new Error("Event not found in response")
-
-        const details: EventDetails = {
-          title:        et.title       ?? "Book a meeting",
-          description:  et.description ?? "",
-          length:       et.length      ?? 30,
-          customFields: (et.bookingFields ?? [])
-            .filter((f: any) =>
-              !["name", "email", "location", "notes", "guests"].includes(f.name)
-            )
-            .map((f: any) => ({
-              name:        f.name,
-              type:        f.type        ?? "text",
-              required:    f.required    ?? false,
-              placeholder: f.placeholder ?? "",
-              options:     f.options?.map((o: any) => o.label ?? o) ?? undefined,
-            })),
-        }
-
-        setSteps(buildSteps(details))
+        const fields: CalField[] = data.customFields ?? []
+        setSteps(buildSteps(fields, data.description ?? "", data.length ?? 30))
       } catch (err: any) {
-        console.warn("Could not load event fields, using fallback:", err.message)
-        setSteps(buildSteps({ title: "Book a meeting", description: "", length: 30, customFields: [] }))
+        console.warn("Falling back to default steps:", err.message)
+        setSteps(buildSteps([], "", 30))
       } finally {
         setLoading(false)
       }
@@ -93,18 +74,11 @@ export default function TheInfoStudioCalBooking() {
     fetchEvent()
   }, [])
 
-  function labelise(name: string) {
-    return name
-      .replace(/([A-Z])/g, " $1")
-      .replace(/[_-]/g, " ")
-      .replace(/^\w/, c => c.toUpperCase())
-      .trim()
-  }
-
-  function buildSteps(details: EventDetails): Step[] {
-    const custom: Step[] = details.customFields.map(f => ({
-      id:          f.name,
-      title:       labelise(f.name),
+  // ── Build step list ────────────────────────────────────────────────────────
+  function buildSteps(fields: CalField[], description: string, length: number): Step[] {
+    const custom: Step[] = fields.map(f => ({
+      id:          f.name,                    // slug used as answer key
+      title:       f.label,                   // exact label from Cal.com
       subtitle:    f.required ? "Required." : "Optional.",
       type:        (f.type === "textarea"
                      ? "textarea"
@@ -114,25 +88,37 @@ export default function TheInfoStudioCalBooking() {
       required:    f.required,
     }))
 
+    // Fallback if no custom fields configured on the event
     if (custom.length === 0) {
       custom.push({
-        id: "prepInfo", type: "textarea", required: false,
+        id:       "prepInfo",
         title:    "Please share anything that will help prepare for our meeting.",
         subtitle: "Optional.",
+        type:     "textarea",
+        required: false,
       })
     }
 
     return [
       ...custom,
-      { id: "contact", type: "contact", required: true,
-        title: "Last step — how do we reach you?",
-        subtitle: "We'll use this to confirm your booking." },
-      { id: "calendar", type: "calendar", required: true,
-        title: "Pick a time.",
-        subtitle: details.description || `${details.length}-minute meeting.` },
+      {
+        id:       "contact",
+        title:    "Last step — how do we reach you?",
+        subtitle: "We'll use this to confirm your booking.",
+        type:     "contact",
+        required: true,
+      },
+      {
+        id:       "calendar",
+        title:    "Pick a time.",
+        subtitle: description || `${length}-minute meeting.`,
+        type:     "calendar",
+        required: true,
+      },
     ]
   }
 
+  // ── Derived state ─────────────────────────────────────────────────────────
   const current    = steps[stepIndex]
   const totalSteps = steps.length
   const progress   = totalSteps ? ((stepIndex + 1) / totalSteps) * 100 : 0
@@ -143,14 +129,22 @@ export default function TheInfoStudioCalBooking() {
   const next = () => setStepIndex(i => Math.min(i + 1, steps.length - 1))
   const prev = () => setStepIndex(i => Math.max(i - 1, 0))
 
+  // ── Build Cal.com embed URL with prefilled name/email ─────────────────────
   const buildCalUrl = () => {
-    const params: Record<string, string> = { name: answers.name || "", email: answers.email || "" }
+    const params: Record<string, string> = {
+      name:  answers.name  || "",
+      email: answers.email || "",
+    }
+    // Pass extra answers as metadata so Cal.com can see them
     Object.entries(answers).forEach(([k, v]) => {
-      if (!["name", "email"].includes(k) && v) params[`metadata[${k}]`] = v
+      if (!["name", "email"].includes(k) && v) {
+        params[`metadata[${k}]`] = v
+      }
     })
     return `${CAL_EMBED_URL}?${new URLSearchParams(params).toString()}&embed=true`
   }
 
+  // ── Cal.com booking confirmation via postMessage ───────────────────────────
   const onCalendarMount = () => {
     const handler = (e: MessageEvent) => {
       if (
@@ -231,12 +225,14 @@ export default function TheInfoStudioCalBooking() {
       return (
         <div>
           {current.type === "textarea"
-            ? <textarea value={val} rows={4} placeholder={current.placeholder ?? "Type your answer…"}
+            ? <textarea value={val} rows={4}
+                placeholder={current.placeholder ?? "Type your answer…"}
                 onChange={e => setAnswer(current.id, e.target.value)}
                 style={{ ...inputCSS(), resize: "none" }}
                 onFocus={e => (e.currentTarget.style.borderColor = ACCENT)}
                 onBlur={e  => (e.currentTarget.style.borderColor = BORDER)} />
-            : <input type="text" value={val} placeholder={current.placeholder ?? "Type your answer…"}
+            : <input type="text" value={val}
+                placeholder={current.placeholder ?? "Type your answer…"}
                 onChange={e => setAnswer(current.id, e.target.value)} style={inputCSS()}
                 onFocus={e => (e.currentTarget.style.borderColor = ACCENT)}
                 onBlur={e  => (e.currentTarget.style.borderColor = BORDER)} />
