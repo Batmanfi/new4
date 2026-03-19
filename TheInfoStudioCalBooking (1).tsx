@@ -17,7 +17,7 @@ const CAL_EVENT_SLUG = "test"
 const CAL_EMBED_URL  = `https://cal.com/${CAL_USERNAME}/${CAL_EVENT_SLUG}`
 
 // ─── Replace with your actual Vercel project URL ──────────────────────────────
-const PROXY_URL = "https://new4-qnt30ey06-batmanfis-projects.vercel.app/api/cal-event"
+const PROXY_URL = "https://new4-sandy.vercel.app/api/cal-event"
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type StepType = "textarea" | "text" | "select" | "contact" | "calendar"
