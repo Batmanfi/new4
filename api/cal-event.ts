@@ -13,7 +13,7 @@ const CAL_EVENT_SLUG = "test"
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS — allow your Framer site to call this endpoint
-  res.setHeader("Access-Control-Allow-Origin", "https://yoursite.framer.website") // ← replace with your Framer domain
+  res.setHeader("Access-Control-Allow-Origin", "https://nassau.framer.website/") // ← replace with your Framer domain
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS")
   res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 
